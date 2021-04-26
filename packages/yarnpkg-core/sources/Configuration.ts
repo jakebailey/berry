@@ -129,6 +129,12 @@ export type PluginConfiguration = {
 // - options that enable a feature must begin with the "enable" prefix
 //   ex: enableEmojis, enableColors
 export const coreDefinitions: {[coreSettingName: string]: SettingsDefinition} = {
+  findOutermostLock: {
+    description: `If true, continue looking upward for the project root even if a lockfile is present.`,
+    type: SettingsType.BOOLEAN,
+    default: false,
+  },
+
   // Not implemented for now, but since it's part of all Yarn installs we want to declare it in order to improve drop-in compatibility
   lastUpdateCheck: {
     description: `Last timestamp we checked whether new Yarn versions were available`,
@@ -823,6 +829,12 @@ export type FindProjectOptions = {
   useRc?: boolean,
 };
 
+declare module '@yarnpkg/core' {
+  interface ConfigurationValueMap {
+    findOutermostLock: boolean;
+  }
+}
+
 export class Configuration {
   public static telemetry: TelemetryManager | null = null;
 
@@ -925,8 +937,8 @@ export class Configuration {
     type CoreKeys = keyof typeof coreDefinitions;
     type CoreFields = {[key in CoreKeys]: any};
 
-    const pickCoreFields = ({ignoreCwd, yarnPath, ignorePath, lockfileFilename}: CoreFields) => ({ignoreCwd, yarnPath, ignorePath, lockfileFilename});
-    const excludeCoreFields = ({ignoreCwd, yarnPath, ignorePath, lockfileFilename, ...rest}: CoreFields) => rest;
+    const pickCoreFields = ({ignoreCwd, yarnPath, ignorePath, lockfileFilename, findOutermostLock}: CoreFields) => ({ignoreCwd, yarnPath, ignorePath, lockfileFilename, findOutermostLock});
+    const excludeCoreFields = ({ignoreCwd, yarnPath, ignorePath, lockfileFilename, findOutermostLock, ...rest}: CoreFields) => rest; // TODO: findOutermostLock should really not be left.
 
     const configuration = new Configuration(startingCwd);
     configuration.importSettings(pickCoreFields(coreDefinitions));
@@ -948,15 +960,16 @@ export class Configuration {
     // our configuration, and to know that we need to know the lockfile name
 
     const lockfileFilename = configuration.get(`lockfileFilename`);
+    const findOutermostLock = configuration.get(`findOutermostLock`);
 
     let projectCwd: PortablePath | null;
     switch (lookup) {
       case ProjectLookup.LOCKFILE: {
-        projectCwd = await Configuration.findProjectCwd(startingCwd, lockfileFilename);
+        projectCwd = await Configuration.findProjectCwd(startingCwd, lockfileFilename, findOutermostLock);
       } break;
 
       case ProjectLookup.MANIFEST: {
-        projectCwd = await Configuration.findProjectCwd(startingCwd, null);
+        projectCwd = await Configuration.findProjectCwd(startingCwd, null, false);
       } break;
 
       case ProjectLookup.NONE: {
@@ -1126,9 +1139,8 @@ export class Configuration {
     return null;
   }
 
-  static async findProjectCwd(startingCwd: PortablePath, lockfileFilename: Filename | null) {
+  static async findProjectCwd(startingCwd: PortablePath, lockfileFilename: Filename | null, outermostProject: boolean) {
     let projectCwd = null;
-
     let nextCwd = startingCwd;
     let currentCwd = null;
 
@@ -1141,7 +1153,9 @@ export class Configuration {
       if (lockfileFilename !== null) {
         if (xfs.existsSync(ppath.join(currentCwd, lockfileFilename))) {
           projectCwd = currentCwd;
-          break;
+          if (!outermostProject) {
+            break;
+          }
         }
       } else {
         if (projectCwd !== null) {

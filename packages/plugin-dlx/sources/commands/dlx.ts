@@ -48,7 +48,7 @@ export default class DlxCommand extends BaseCommand {
       await xfs.writeFilePromise(ppath.join(tmpDir, `yarn.lock` as Filename), ``);
 
       const targetYarnrc = ppath.join(tmpDir, `.yarnrc.yml` as Filename);
-      const projectCwd = await Configuration.findProjectCwd(this.context.cwd, Filename.lockfile);
+      const projectCwd = await Configuration.findProjectCwd(this.context.cwd, Filename.lockfile, false);
 
       // We set enableGlobalCache to true for dlx calls to speed it up but only if the
       // project it's run in has enableGlobalCache set to false, otherwise we risk running into
